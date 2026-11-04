@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Android Call Saver</string>
+
+    <string name="channel_service_name">Call recording service</string>
+    <string name="channel_service_description">Keeps call detection and recording running.</string>
+    <string name="channel_upload_name">Uploads</string>
+    <string name="channel_upload_description">Uploads recorded calls to the company server.</string>
+
+    <string name="notification_service_title">Call Saver is active</string>
+    <string name="notification_service_text">Watching for calls</string>
+    <string name="notification_recording_title">Recording call</string>
+    <string name="notification_recording_text">Saving the call to this device</string>
+    <string name="notification_permissions_needed">Permissions needed</string>
+    <string name="notification_permission_action">Grant permissions</string>
+    <string name="notification_upload_title">Uploading call recording</string>
+    <string name="notification_upload_text">Sending to the company server</string>
+</resources>

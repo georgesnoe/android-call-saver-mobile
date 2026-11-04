@@ -1,0 +1,165 @@
+name: Build and release APK
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-call-saver-mobile-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      API_BASE_URL: ${{ vars.API_BASE_URL }}
+      API_UPLOAD_PATH: ${{ vars.API_UPLOAD_PATH || '/api/upload' }}
+      API_ACCESS_CODE: ${{ secrets.API_ACCESS_CODE }}
+      API_ACCESS_HEADER: ${{ vars.API_ACCESS_HEADER || 'x-access-code' }}
+      DEFAULT_COUNTRY_CODE: ${{ vars.DEFAULT_COUNTRY_CODE || '+228' }}
+      RECORDING_AUDIO_SOURCE: ${{ vars.RECORDING_AUDIO_SOURCE || 'auto' }}
+      RECORDING_BITRATE: ${{ vars.RECORDING_BITRATE || '32000' }}
+      ALLOW_CLEARTEXT: ${{ vars.ALLOW_CLEARTEXT || 'false' }}
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK platform and build tools
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager --install "platforms;android-37.0" "build-tools;36.0.0" "build-tools;37.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Validate build configuration
+        run: |
+          set -euo pipefail
+          missing=0
+          if [ -z "${API_BASE_URL}" ]; then
+            echo "::error::Repository variable API_BASE_URL is not set."
+            missing=1
+          fi
+          if [ -z "${API_ACCESS_CODE}" ]; then
+            echo "::error::Repository secret API_ACCESS_CODE is not set."
+            missing=1
+          fi
+          if [ "${missing}" -ne 0 ]; then
+            echo "Set the variables/secrets described in README.md and run again."
+            exit 1
+          fi
+
+          if [[ "${API_BASE_URL}" != https://* && "${ALLOW_CLEARTEXT}" != "true" ]]; then
+            echo "::error::API_BASE_URL must use https:// (or set ALLOW_CLEARTEXT=true for local testing)."
+            exit 1
+          fi
+
+          if [ -n "${ANDROID_KEYSTORE_BASE64}" ]; then
+            if [ -z "${ANDROID_KEYSTORE_PASSWORD}" ] || \
+               [ -z "${ANDROID_KEY_ALIAS}" ] || \
+               [ -z "${ANDROID_KEY_PASSWORD}" ]; then
+              echo "::error::Keystore is configured but its password/alias secrets are missing."
+              exit 1
+            fi
+          else
+            echo "::warning::No ANDROID_KEYSTORE_BASE64 secret. The APK will be debug-signed; production updates will not install over it once you switch keys."
+          fi
+
+      - name: Prepare signing key
+        run: |
+          set -euo pipefail
+          if [ -n "${ANDROID_KEYSTORE_BASE64}" ]; then
+            printf '%s' "${ANDROID_KEYSTORE_BASE64}" | base64 -d > "${RUNNER_TEMP}/release.keystore"
+            {
+              echo "ANDROID_KEYSTORE_PATH=${RUNNER_TEMP}/release.keystore"
+              echo "ANDROID_KEYSTORE_PASSWORD=${ANDROID_KEYSTORE_PASSWORD}"
+              echo "ANDROID_KEY_ALIAS=${ANDROID_KEY_ALIAS}"
+              echo "ANDROID_KEY_PASSWORD=${ANDROID_KEY_PASSWORD}"
+            } >> "${GITHUB_ENV}"
+            echo "Release signing key prepared."
+          else
+            echo "Using the debug signing key."
+          fi
+
+      - name: Resolve version
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION_NAME="${GITHUB_REF_NAME#v}"
+          else
+            VERSION_NAME="dev-${GITHUB_RUN_NUMBER}"
+          fi
+          VERSION_NAME="$(printf '%s' "${VERSION_NAME}" | tr -c 'A-Za-z0-9._-' '-' | sed -e 's/^-\{1,\}//' -e 's/-\{1,\}$//')"
+          VERSION_NAME="${VERSION_NAME:-0.0.0}"
+          echo "VERSION_NAME=${VERSION_NAME}" >> "${GITHUB_ENV}"
+          echo "VERSION_CODE=${GITHUB_RUN_NUMBER}" >> "${GITHUB_ENV}"
+          echo "Building ${VERSION_NAME} (${GITHUB_RUN_NUMBER})"
+
+      - name: Build, test and assemble release
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon clean testDebugUnitTest assembleRelease
+
+      - name: Name APK and checksum
+        run: |
+          set -euo pipefail
+          APK="$(find app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -print -quit)"
+          test -n "${APK}"
+          OUT="android-call-saver-${VERSION_NAME}-${VERSION_CODE}.apk"
+          cp "${APK}" "${OUT}"
+          sha256sum "${OUT}" > "${OUT}.sha256"
+          ls -lh "${OUT}"
+          cat "${OUT}.sha256"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-call-saver-apk-${{ github.run_number }}
+          path: |
+            android-call-saver-*.apk
+            android-call-saver-*.apk.sha256
+            app/build/outputs/mapping/release/mapping.txt
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            android-call-saver-*.apk
+            android-call-saver-*.apk.sha256
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+
+      - name: Write job summary
+        if: always()
+        run: |
+          {
+            echo "### Call Saver APK"
+            echo ""
+            echo "- Version: \`${VERSION_NAME:-unknown}\` / code \`${VERSION_CODE:-unknown}\`"
+            echo "- API base: \`${API_BASE_URL:-missing}\`"
+            echo "- Upload path: \`${API_UPLOAD_PATH:-missing}\`"
+            echo "- Access code: \`${API_ACCESS_CODE:+configured}\`"
+            echo ""
+            echo "> The access code is compiled into the APK. Anyone with the APK can extract it; use a device-scoped token or short-lived credentials where possible."
+          } >> "${GITHUB_STEP_SUMMARY}"

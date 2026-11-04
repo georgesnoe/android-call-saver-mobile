@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+    <!-- CAPTURE_AUDIO_OUTPUT is only granted when the APK is installed as a privileged app. -->
+    <issue id="ProtectedPermissions" severity="ignore" />
+    <!-- The always-on foreground service is the core product behaviour. -->
+    <issue id="BatteryLife" severity="ignore" />
+    <issue id="ExportedReceiver" severity="warning" />
+</lint>
