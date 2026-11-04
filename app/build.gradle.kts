@@ -30,9 +30,9 @@ val versionCodeValue = envOrProperty("VERSION_CODE", "1").toIntOrNull() ?: 1
 val keystorePath = envOrProperty("ANDROID_KEYSTORE_PATH")
 val keystorePassword = envOrProperty("ANDROID_KEYSTORE_PASSWORD")
 val keyAliasValue = envOrProperty("ANDROID_KEY_ALIAS")
-val keyPassword = envOrProperty("ANDROID_KEY_PASSWORD")
+val keyPasswordValue = envOrProperty("ANDROID_KEY_PASSWORD")
 val hasReleaseKeystore = keystorePath.isNotBlank() && file(keystorePath).exists() &&
-    keystorePassword.isNotBlank() && keyAliasValue.isNotBlank() && keyPassword.isNotBlank()
+    keystorePassword.isNotBlank() && keyAliasValue.isNotBlank() && keyPasswordValue.isNotBlank()
 
 android {
     namespace = "com.callsaver.app"
@@ -63,7 +63,7 @@ android {
                 storeFile = file(keystorePath)
                 storePassword = keystorePassword
                 keyAlias = keyAliasValue
-                keyPassword = keyPassword
+                keyPassword = keyPasswordValue
             }
         }
     }
