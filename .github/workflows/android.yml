@@ -38,7 +38,7 @@ jobs:
         uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: "25"
+          java-version: '25'
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
@@ -50,6 +50,8 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '9.3.1'
 
       - name: Validate build configuration
         run: |
